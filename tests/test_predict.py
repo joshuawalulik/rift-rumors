@@ -167,9 +167,11 @@ def conn(tmp_path_factory):
     rows = [("LCK", 2025, "stayed"), ("LCK", 2025, "moved"), ("LCK", 2026, "pending")]
     for i, (league, year, outcome) in enumerate(rows):
         c.execute(
-            "INSERT INTO offseason_outcomes VALUES (?,?,?,?,?,?,?,?,?,?)",
-            (year, league, f"P{i}", "Mid", "T1", f"{year}-09-13", None, None, outcome, None),
-        )
+            "INSERT INTO offseason_outcomes (year, league, player, role, team_before, "
+            "season_end, cutoff, outcome, outcome_feb1) VALUES (?,?,?,?,?,?,?,?,?)",
+            (year, league, f"P{i}", "Mid", "T1", f"{year}-09-13", f"{year + 1}-01-15",
+             outcome, outcome),
+        )  # fmt: skip
     return c
 
 

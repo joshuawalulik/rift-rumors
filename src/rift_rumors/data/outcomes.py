@@ -64,6 +64,41 @@ def resolve_outcome(
     return Outcome(team_after=newest.team, outcome="moved")
 
 
+IN_GAME_ROLES = {"top", "jungle", "mid", "bot", "support"}
+ACADEMY_SUFFIX = re.compile(r"\s+(Challengers|Academy|Youth)$", re.IGNORECASE)
+
+
+def is_playing_role(role: str | None) -> bool:
+    """Does a roster-change role mean a PLAYING stint?
+
+    Found in exercise 4: Finn, Treatz and Trymbi were labeled "moved" to
+    "LoL EMEA Championship". They had joined the broadcast desk as Analysts.
+    Coaches, analysts, casters and streamers aren't playing for a team.
+    Combined roles count if any part is a position ("Mid/Part-Owner",
+    player-coach "Coach/Support"). Unknown roles (None) are kept.
+    """
+    if not role:
+        return True
+    return any(part.strip().lower() in IN_GAME_ROLES for part in role.split("/"))
+
+
+def is_own_academy(
+    team_before: str, team_after: str, teams: TeamLineage, orgs: dict[str, str]
+) -> bool:
+    """Is `team_after` the academy of `team_before`'s organization (a demotion)?
+
+    By name ("DRX" → "DRX Challengers") or, when Leaguepedia links them, by
+    organization page ("Nongshim RedForce" → "Nongshim Esports Academy").
+    """
+    base = ACADEMY_SUFFIX.sub("", team_after)
+    if base == team_after:
+        return False  # not an academy team at all (an org's two main teams aren't a demotion)
+    if teams.same(base, team_before):
+        return True
+    org_before, org_after = orgs.get(team_before), orgs.get(team_after)
+    return bool(org_before) and org_before == org_after
+
+
 def tenures_from_roster_changes(
     player: str, events: Iterable[tuple[str, str, str]]
 ) -> list[Tenure]:

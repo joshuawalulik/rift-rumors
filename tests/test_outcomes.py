@@ -3,6 +3,8 @@ from rift_rumors.data.outcomes import (
     ContractNews,
     Tenure,
     contract_end_as_of,
+    is_own_academy,
+    is_playing_role,
     news_date,
     resolve_outcome,
     tenures_from_roster_changes,
@@ -130,3 +132,42 @@ def test_contract_removal_means_no_known_contract():
 def test_undated_announcements_are_never_trusted():
     rows = [ContractNews("T1", "2030-01-01", None, False)]
     assert contract_end_as_of(rows, "T1", "2026-01-01", NONE) is None
+
+
+# --- label rules from exercise 4 -------------------------------------------------
+
+
+def test_analyst_and_coach_stints_are_not_playing():  # Finn "moved" to the LEC desk
+    assert not is_playing_role("Analyst")
+    assert not is_playing_role("Head Coach")
+    assert not is_playing_role("Content Creator/Co-Streamer")
+
+
+def test_playing_roles_including_combined_ones():
+    assert is_playing_role("Mid")
+    assert is_playing_role("Mid/Part-Owner")
+    assert is_playing_role("Coach/Support")  # player-coach
+    assert is_playing_role(None)  # unknown: keep
+
+
+def test_own_academy_by_name_is_a_demotion():  # Taeyoon
+    assert is_own_academy("Kwangdong Freecs", "Kwangdong Freecs Challengers", NONE, {})
+
+
+def test_own_academy_through_a_rebrand():
+    teams = TeamLineage([("Kwangdong Freecs", "DN Freecs")])
+    assert is_own_academy("Kwangdong Freecs", "DN Freecs Academy", teams, {})
+
+
+def test_own_academy_by_organization_page():  # Nongshim: names differ, org matches
+    orgs = {"Nongshim RedForce": "Team Dynamics", "Nongshim Esports Academy": "Team Dynamics"}
+    assert is_own_academy("Nongshim RedForce", "Nongshim Esports Academy", NONE, orgs)
+
+
+def test_another_orgs_academy_is_a_transfer():  # Quad: NS -> FlyQuest Challengers
+    assert not is_own_academy("Nongshim RedForce", "FlyQuest Challengers", NONE, {})
+
+
+def test_same_org_main_team_is_not_a_demotion():
+    orgs = {"Org Main KR": "Org", "Org Main NA": "Org"}
+    assert not is_own_academy("Org Main KR", "Org Main NA", NONE, orgs)

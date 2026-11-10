@@ -62,6 +62,9 @@ History never expires from the cache; current-offseason data refreshes every 6 h
 For each player, `outcome` describes where they were on **February 1** of the next year (`src/rift_rumors/data/outcomes.py`):
 
 - `stayed`: kept their seat. Staying through a rename, rebrand, **acquisition or merger** counts (decided 2026-11-10: same seat, new owner).
+- Only **playing** stints count. Joining the broadcast desk, coaching staff or streaming team isn't a team to play for (§8b).
+- **When:** on the day the player's league starts its **next season** (`cutoff`; LCK ~Jan 15, LEC ~Jan 18, LCS ~Jan 24). `outcome_feb1` keeps the original Feb 1 rule, which v0's grading was pre-registered on.
+- `moved` carries a `move_type`: `transfer`, or `demotion` (sent down to your own org's academy).
 - `moved`: a different team. If the player is listed on two teams, the continuing team wins, otherwise the most recent join.
 - `no_team`: no active stint (free agent, retired, other role). This is a real outcome to predict, not missing data.
 - `pending`: the 2026 offseason, which hasn't happened yet.
@@ -128,25 +131,42 @@ Exact-match joins silently dropped those players, or mislabeled their outcomes.
 
 v0's **frozen** predictions are unchanged: frozen means frozen. v0 was *trained* on the noisier labels and will be *graded* on the corrected ones. That's the honest order: fix the answer key, never the submitted answers.
 
+## 8b. Label rules from exercise 4
+
+Exercise 4 (moving the cutoff to Jan 1) surfaced three more issues. Two of them were definition questions, decided 2026-11-10:
+
+| Issue | Example | Rule now | Labels affected |
+|---|---|---|---|
+| **Non-playing stints counted as teams** | Finn, Treatz, Trymbi "moved" to *LoL EMEA Championship*: they joined the **broadcast desk** as Analysts | A stint counts only if its role includes a position (`Mid/Part-Owner` and player-coach `Coach/Support` count; Analyst, Coach, Streamer, Caster don't). 40 non-playing stints ignored | **8** |
+| ↳ same fix caught silent retirements | Bible (DK), Spica (FlyQuest), Th3Antonio (GIANTX) **rejoined their team as streamers or content creators**: labeled "stayed". Rascal joined KT as a streamer: labeled "moved" | now `no_team` | (in the 8) |
+| **Academy demotions** | Calix, Sylvie, Vital: Nongshim RedForce → Nongshim Esports Academy | still `moved` (they lost their seat), tagged `move_type = demotion`. Detected by name (`DRX` → `DRX Challengers`) or org page. Another org's academy (Quad → FlyQuest Challengers) is a `transfer` | 7 demotions tagged |
+| **Arbitrary calendar cutoff** | Jan 1 vs Feb 1 flipped 33 labels | `cutoff` = **the day the league's next season starts** (an event, not a date someone picked). `outcome_feb1` kept alongside | **3** vs Feb 1 |
+
+The season-start cutoff turned out **stable**: it differs from Feb 1 on only 3 labels, versus 33 for Jan 1. League openers fall *after* January's registration paperwork, which is where the instability was.
+
+**Pre-registration:** v0's freeze metadata says it will be graded "as of Feb 1". Changing a frozen model's grading rule afterwards is how results get quietly flattered. So v0 is graded on `outcome_feb1` as the primary result, with the season-start score reported alongside. New models use `outcome`. (The playing-stint fix applies to both columns: it corrects wrong data, it doesn't redefine the question.)
+
+v0 backtest on the final labels: leave-Brier **0.211** vs base rate **0.249**.
+
 ## 9. Results
 
 **Backtest population:** 445 labeled player-seasons, 2023–2025 offseasons, LCK + LEC + LCS.
 
 | Contract status at season end | n | Stayed | Moved | No team |
 |---|---|---|---|---|
-| Expiring (≤ 120 days after season end) | 201 | 33% | **53%** | 14% |
-| Under contract | 206 | **68%** | 26% | 6% |
-| Unknown | 38 | 47% | 47% | 5% |
-| **All** | **445** | **51%** | | |
+| Expiring (≤ 120 days after season end) | 201 | 33% | **50%** | 17% |
+| Under contract | 206 | **68%** | 25% | 7% |
+| Unknown | 38 | 42% | 47% | 11% |
+| **All** | **445** | **50%** | | |
 
 **When moves become known:** of players who didn't stay, **72%** had their first roster change recorded by **Nov 20**, and **97%** by Dec 31.
 
 **The live 2026 offseason, as of Nov 10:** 137 players (133 when v0 was frozen, before the identity fix; 12 of those already had a recorded move).
 
 ### What to notice
-1. **Churn is the norm.** Only 51% of tier-one players keep their seat through an offseason (46% before the identity fix: rebrands were being counted as moves). "Everyone stays" is a weak baseline, and that's good news: there's real signal to find.
+1. **Churn is the norm.** Only 50% of tier-one players keep their seat through an offseason (46% before the fixes in §8: rebrands were counted as moves, and retirements into streaming were counted as staying). "Everyone stays" is a weak baseline, and that's good news: there's real signal to find.
 2. **Contract status is a strong signal.** Expiring → 67% leave (moved + no team). Under contract → 68% stay. Any model must beat a *contract-only* rule, not just "everyone stays".
-3. **But 26% of under-contract players moved anyway** (buyouts, trades). Contracts alone won't get there, and rumors should help most for exactly these players.
+3. **But 25% of under-contract players moved anyway** (buyouts, trades). Contracts alone won't get there, and rumors should help most for exactly these players.
 4. **The live window is closing.** 72% of moves are recorded by Nov 20, ten days from now. To grade predictions live, a v0 must be **frozen this week**. That moves the "contract-only baseline" from Lesson 06 to *now*.
 5. **The data needed auditing.** Six real bugs (loose regex, playoffs-only, leaked contracts, player-name mismatches, incomplete team renames, retroactive rebrand names) were each caught by *looking at the output*, not by the code crashing. None raised an error. Three were found by the person who knows the leagues, not by the code author.
 
@@ -167,6 +187,7 @@ Answer with SQL against `data/ground_truth.db`. Predict first, then query.
 
 - "My labels came from an external wiki. I audited them by hand, found three silent bugs (a loose regex, playoffs-only sampling that dropped the players most likely to move, and leaked contract dates), and fixed each with a test."
 - "Domain knowledge found what tests didn't: G2 showing 3 of 5 players exposed that the source's tables disagree on player names (case variants, in-game renames, even a capital-I-for-lowercase-l typo). I added a canonical identity layer and re-measured: 14 labels corrected, 26 players recovered."
+- "I pre-registered how v0 would be graded, and when I later improved the label definition, I kept grading v0 on the original rule. Changing the grading rule after the fact is how results get quietly flattered."
 - "I caught temporal leakage in the source data itself: a contract field reflected re-signings made years later. I rebuilt contract status point-in-time from dated announcements."
 - "I validated the third-party contract data against Riot's official database: 99% agreement. I resolved the conflicts by recency of evidence, and snapshot the official sheet because it keeps no history."
 - "The fetcher logs in with least privilege, throttles, backs off, and caches every response, so the dataset rebuilds with zero network calls and every metric traces back to the raw data."
