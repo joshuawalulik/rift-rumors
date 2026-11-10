@@ -12,6 +12,7 @@ load_dotenv(REPO_ROOT / ".env")
 
 DATA_DIR = Path(os.getenv("RIFT_DATA_DIR", REPO_ROOT / "data"))
 LEDGER_PATH = DATA_DIR / "llm_calls.jsonl"
+GROUND_TRUTH_DB = DATA_DIR / "ground_truth.db"
 
 # The models Lesson 00 compares. Override with a comma-separated RIFT_MODELS in .env.
 DEFAULT_MODELS = [

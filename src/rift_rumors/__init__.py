@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 
 
 def main() -> None:
@@ -24,8 +25,27 @@ def main() -> None:
     hello.add_argument("--no-system", action="store_true", help="drop the system prompt")
     hello.add_argument("--repeat", type=int, default=1, help="call each model N times")
 
+    sub.add_parser("ground-truth", help="Lesson 01: build data/ground_truth.db from Leaguepedia")
+
     args = parser.parse_args()
-    if args.command == "hello":
+    if args.command == "ground-truth":
+        from rift_rumors import config
+        from rift_rumors.data import db, ground_truth
+        from rift_rumors.data.leaguepedia import CargoClient
+
+        client = CargoClient(
+            config.DATA_DIR / "raw" / "leaguepedia",
+            username=os.getenv("LEAGUEPEDIA_USERNAME") or None,
+            bot_password=os.getenv("LEAGUEPEDIA_BOT_PASSWORD") or None,
+        )
+        # The DB is fully derived from the raw cache, so rebuild it from scratch each run.
+        config.GROUND_TRUTH_DB.unlink(missing_ok=True)
+        conn = db.connect(config.GROUND_TRUTH_DB)
+        counts = ground_truth.build(client, conn, gcd_dir=config.DATA_DIR / "raw" / "gcd")
+        print(f"\nWrote {config.GROUND_TRUTH_DB} ({client.requests_made} API requests)")
+        for table, n in counts.items():
+            print(f"  {table:<20} {n:>6} rows")
+    elif args.command == "hello":
         from rift_rumors import hello as lesson
 
         models = [m.strip() for m in args.models.split(",")] if args.models else None

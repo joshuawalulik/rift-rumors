@@ -503,6 +503,7 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "anthropic" },
+    { name = "httpx" },
     { name = "ollama" },
     { name = "pydantic" },
     { name = "python-dotenv" },
@@ -518,6 +519,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "anthropic", specifier = ">=2.7.0" },
+    { name = "httpx", specifier = ">=0.28.1" },
     { name = "ollama", specifier = ">=0.6.3" },
     { name = "pydantic", specifier = ">=2.14.3" },
     { name = "python-dotenv", specifier = ">=1.2.4" },
