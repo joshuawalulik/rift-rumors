@@ -20,10 +20,10 @@ Or browse interactively: `uvx datasette data/ground_truth.db` → http://localho
 | [ex5-gcd-staleness.sql](ex5-gcd-staleness.sql) | How fresh is Riot's contract sheet? | EMEA tab last updated Sep 9 (2 months stale), KR Nov 3. Mitigations: recency rule, fresher roster changes, snapshot diffs, rumors |
 | [ex6-live-board.sql](ex6-live-board.sql) | Which 2026 seats are most open right now? | 69 players expiring with no news; BNK FEARX, Nongshim, Disguised, Shopify Rebellion, GIANTX have all 5 open. My calls: ShowMaker stays, Sharvel and Doran move (v0 says 66% leave for all three) |
 
-## Open label issues (to fix next)
-- **League-as-team:** 4 labels have `team_after = 'LoL EMEA Championship'` (a non-team role). These should be `no_team`.
-- **Academy demotions:** being sent down to your own org's academy (Taeyoon, Jan 2024) is labeled "moved". Decide whether that's right.
-- **Event-based cutoff:** use the first official match of the next season instead of Feb 1.
+## Label issues found by these exercises: all fixed (lesson §8, §8b)
+- ~~**League-as-team:**~~ only playing stints count now. That also caught Bible, Spica and Th3Antonio rejoining their teams as streamers ("stayed" → `no_team`).
+- ~~**Academy demotions:**~~ still `moved` (seat lost), tagged `move_type = 'demotion'` (7 cases).
+- ~~**Event-based cutoff:**~~ `cutoff` = the day the league's next season starts; `outcome_feb1` kept for v0's pre-registered grading.
 
 ## SQL lessons learned
 - **Restart Datasette after every rebuild.** The rebuild replaces the `.db` file, and a running Datasette keeps showing the old deleted file (it showed 190 rows where the real file had 380).

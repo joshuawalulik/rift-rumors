@@ -27,6 +27,11 @@
 --   A better definition than any date: the team the player played for in the
 --   FIRST OFFICIAL MATCH of the next season (event-based, not calendar-based).
 --   Until then, Feb 1 sits in a more stable spot (Mar 1 moves 13 labels, Jan 1 moves 33).
+--
+-- FIXED (2026-11-10, lesson 01 section 8b): labels now use the day the league's
+-- next season starts (`cutoff`), and only PLAYING stints count. The season-start
+-- cutoff differs from Feb 1 on just 3 labels. `outcome_feb1` is kept because v0's
+-- grading was pre-registered on Feb 1.
 
 -- After the rebuild with "01-01": which labels changed?
 ATTACH 'data/gt_feb1.db' AS feb;

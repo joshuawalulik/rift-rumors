@@ -19,13 +19,16 @@ from datetime import date
 from pathlib import Path
 
 from rift_rumors.data import db, gcd
-from rift_rumors.data.identity import PlayerIndex, TeamLineage, load_manual_continuity
+from rift_rumors.data.identity import PlayerIndex, TeamLineage, fold, load_manual_continuity
 from rift_rumors.data.leaguepedia import CargoClient
 from rift_rumors.data.outcomes import (
+    ACADEMY_SUFFIX,
     ContractNews,
     Tenure,
     active_on,
     contract_end_as_of,
+    is_own_academy,
+    is_playing_role,
     resolve_outcome,
     tenures_from_roster_changes,
 )
@@ -43,7 +46,8 @@ LEAGUE_NAMES = {
 SECOND_HALF_MONTH_DAY = "06-01"
 FIRST_YEAR = 2023
 IN_GAME_ROLES = {"Top", "Jungle", "Mid", "Bot", "Support"}
-# Next season's rosters are set by early February in all three leagues.
+# Pre-registered cutoff for grading v0 (and the fallback before a season start
+# is scheduled). Primary labels use each league's season-start date instead.
 CUTOFF_MONTH_DAY = "02-01"
 CHUNK = 40  # player names per IN (...) query, to keep URLs a sane length
 
@@ -325,6 +329,39 @@ def _canonicalize(rows: list[dict], index: PlayerIndex) -> list[dict]:
     return [{**r, "player": index.canonical(r["player"])} for r in rows]
 
 
+def season_starts(tournaments: list[dict]) -> list[dict]:
+    """Each league's first tournament of each year: the day its season starts.
+
+    This is the label cutoff: "where was the player when their league's next
+    season began?" It's an event, not an arbitrary calendar date. Exercise 4
+    showed a Jan 1 vs Feb 1 choice flips 1 in 14 labels.
+    """
+    first: dict[tuple[str, int], dict] = {}
+    for t in tournaments:
+        key = (t["league"], t["year"])
+        if t["date_start"] and (key not in first or t["date_start"] < first[key]["date_start"]):
+            first[key] = t
+    return [
+        {"league": league, "year": year, "date_start": t["date_start"], "page": t["page"]}
+        for (league, year), t in sorted(first.items())
+    ]
+
+
+def fetch_team_orgs(client: CargoClient, teams: list[str]) -> list[dict]:
+    """Leaguepedia's organization page per team (often empty), used to spot academies."""
+    out = []
+    for chunk in _chunks(teams):
+        for r in client.query(
+            tables="Teams=T",
+            fields="T.OverviewPage=team,T.OrganizationPage=org",
+            where=_in("T.OverviewPage", chunk),
+            max_age_s=ONE_DAY,
+        ):
+            if r["team"] and r["org"]:
+                out.append({"team": r["team"], "org": r["org"]})
+    return out
+
+
 # --- 4. derived labels ----------------------------------------------------------
 
 
@@ -338,15 +375,32 @@ def compute_outcomes(conn: sqlite3.Connection, today: date | None = None, log=pr
             lineages[as_of] = TeamLineage.as_of(continuity, as_of)
         return lineages[as_of]
 
-    changes_by_player: dict[str, list[tuple[str, str, str]]] = defaultdict(list)
-    for r in conn.execute("SELECT player, date, team, direction FROM roster_changes ORDER BY date"):
-        changes_by_player[r["player"]].append((r["date"], r["team"], r["direction"]))
+    starts = {
+        (r["league"], r["year"]): r["date_start"]
+        for r in conn.execute("SELECT * FROM season_starts")
+    }
+    orgs = {r["team"]: r["org"] for r in conn.execute("SELECT * FROM team_orgs")}
 
+    changes_by_player: dict[str, list[tuple[str, str, str]]] = defaultdict(list)
+    join_role: dict[tuple[str, str, str], str | None] = {}
+    for r in conn.execute("SELECT * FROM roster_changes ORDER BY date"):
+        changes_by_player[r["player"]].append((r["date"], r["team"], r["direction"]))
+        if r["direction"] == "Join":
+            join_role[(r["player"], fold(r["team"]), r["date"])] = r["role"]
+
+    # Only PLAYING stints count. A stint's role is the role on the Join that
+    # opened it; analysts, coaches, casters and streamers are dropped.
     tenures_by_player: dict[str, list[Tenure]] = defaultdict(list)
+    non_playing = 0
     for r in conn.execute("SELECT * FROM tenures ORDER BY date_join"):
+        role = join_role.get((r["player"], fold(r["team"]), r["date_join"]))
+        if not is_playing_role(role):
+            non_playing += 1
+            continue
         tenures_by_player[r["player"]].append(
             Tenure(r["player"], r["team"], r["date_join"], r["date_leave"])
         )
+    log(f"ignored {non_playing} non-playing stints (analyst, coach, caster, streamer...)")
 
     contracts_by_player: dict[str, list[ContractNews]] = defaultdict(list)
     for r in conn.execute("SELECT * FROM contracts"):
@@ -373,11 +427,19 @@ def compute_outcomes(conn: sqlite3.Connection, today: date | None = None, log=pr
     ):
         latest[(row["year"], row["player"])] = row  # later rows overwrite earlier ones
 
+    def label(team_before: str, tenures: list[Tenure], cutoff: str) -> tuple[str | None, str]:
+        if cutoff > today_iso:
+            return None, "pending"  # not known yet
+        resolved = resolve_outcome(team_before, tenures, cutoff, lineage(cutoff))
+        return resolved.team_after, resolved.outcome
+
     outcomes, excluded = [], Counter()
     for (year, player), row in sorted(latest.items()):
         season_end = season_end_by_league_year[(row["league"], year)]
-        cutoff = f"{year + 1}-{CUTOFF_MONTH_DAY}"
-        teams = lineage(cutoff)
+        feb1 = f"{year + 1}-{CUTOFF_MONTH_DAY}"
+        # Event-based cutoff: the day this league's next season starts. Before that
+        # is scheduled (the live offseason), fall back to Feb 1, which is still pending.
+        cutoff = starts.get((row["league"], year + 1)) or feb1
         tenures = tenures_by_player[player]
 
         if not tenures and not changes_by_player[player]:
@@ -386,10 +448,18 @@ def compute_outcomes(conn: sqlite3.Connection, today: date | None = None, log=pr
 
         # Keep only players still on that team when the season ended. Someone released
         # in July didn't make an *offseason* move, so they aren't in this population.
+        teams = lineage(cutoff)
         if not any(teams.same(t.team, row["team"]) and active_on(t, season_end) for t in tenures):
             excluded["no active stint on that team at season end (left mid-season, "
                      "or an academy call-up)"] += 1  # fmt: skip
             continue
+
+        team_after, outcome = label(row["team"], tenures, cutoff)
+        team_after_feb1, outcome_feb1 = label(row["team"], tenures, feb1)
+        move_type = None
+        if outcome == "moved":
+            demoted = is_own_academy(row["team"], team_after, teams, orgs)
+            move_type = "demotion" if demoted else "transfer"
 
         # Roster changes inside this offseason window only (not, say, a 2025 status
         # change attached to a player who stayed through the 2023 offseason).
@@ -397,12 +467,6 @@ def compute_outcomes(conn: sqlite3.Connection, today: date | None = None, log=pr
         first_move = next(
             (d for d, _, _ in changes_by_player[player] if season_end < d <= window_end), None
         )
-        if cutoff > today_iso:
-            team_after, outcome = None, "pending"  # this offseason: labels not known yet
-        else:
-            resolved = resolve_outcome(row["team"], tenures, cutoff, teams)
-            team_after, outcome = resolved.team_after, resolved.outcome
-
         outcomes.append(
             {
                 "year": year,
@@ -415,8 +479,12 @@ def compute_outcomes(conn: sqlite3.Connection, today: date | None = None, log=pr
                 "contract_end": contract_end_as_of(
                     contracts_by_player[player], row["team"], season_end, lineage(season_end)
                 ),
+                "cutoff": cutoff,
                 "team_after": team_after,
                 "outcome": outcome,
+                "move_type": move_type,
+                "team_after_feb1": team_after_feb1,
+                "outcome_feb1": outcome_feb1,
                 "first_move_date": first_move,
             }
         )
@@ -431,7 +499,7 @@ def rebuilt_tenures(tenures: list[dict], changes: list[dict]) -> list[dict]:
     has_tenures = {t["player"] for t in tenures}
     events: dict[str, list[tuple[str, str, str]]] = defaultdict(list)
     for c in changes:
-        if c["player"] not in has_tenures:
+        if c["player"] not in has_tenures and is_playing_role(c["role"]):
             events[c["player"]].append((c["date"], c["team"], c["direction"]))
     rows = []
     for player, evs in events.items():
@@ -462,7 +530,8 @@ def build(
     continuity_path: Path | None = None,
     log=print,
 ) -> dict[str, int]:
-    second_half = second_half_tournaments(fetch_tournaments(client))
+    all_tournaments = fetch_tournaments(client)
+    second_half = second_half_tournaments(all_tournaments)
     log(f"second-half tournaments: {len(second_half)}")
     for t in second_half:
         log(f"  {t['league']} {t['year']}  {t['date_start']} → {t['date_end']}  {t['page']}")
@@ -485,12 +554,19 @@ def build(
     continuity = fetch_team_continuity(client)
     if continuity_path is not None:
         continuity += load_manual_continuity(continuity_path)
+    # Organization pages only matter for spotting academies of our teams.
+    org_teams = sorted(
+        {r["team"] for r in rosters}
+        | {t["team"] for t in tenures if ACADEMY_SUFFIX.search(t["team"] or "")}
+    )
 
     counts = {
         "tournaments": db.replace_rows(conn, "tournaments", second_half),
+        "season_starts": db.replace_rows(conn, "season_starts", season_starts(all_tournaments)),
         "tournament_rosters": db.replace_rows(conn, "tournament_rosters", rosters),
         "player_aliases": db.replace_rows(conn, "player_aliases", aliases),
         "team_renames": db.replace_rows(conn, "team_renames", continuity),
+        "team_orgs": db.replace_rows(conn, "team_orgs", fetch_team_orgs(client, org_teams)),
         "tenures": db.replace_rows(conn, "tenures", tenures),
         "roster_changes": db.replace_rows(conn, "roster_changes", changes),
         "contracts": db.replace_rows(

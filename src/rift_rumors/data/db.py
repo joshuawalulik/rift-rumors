@@ -30,6 +30,21 @@ CREATE TABLE IF NOT EXISTS tournament_rosters (
     PRIMARY KEY (tournament, team, player)
 );
 
+-- First tournament of each league-year: the day its season starts (label cutoff).
+CREATE TABLE IF NOT EXISTS season_starts (
+    league     TEXT NOT NULL,
+    year       INTEGER NOT NULL,
+    date_start TEXT NOT NULL,
+    page       TEXT NOT NULL,
+    PRIMARY KEY (league, year)
+);
+
+-- Leaguepedia organization page per team (often empty); used to spot academies.
+CREATE TABLE IF NOT EXISTS team_orgs (
+    team TEXT PRIMARY KEY,
+    org  TEXT NOT NULL
+);
+
 -- Every name a player has used → their canonical page (from PlayerRedirects).
 -- Every `player` column in this database holds the canonical page name.
 CREATE TABLE IF NOT EXISTS player_aliases (
@@ -118,8 +133,12 @@ CREATE TABLE IF NOT EXISTS offseason_outcomes (
     team_before      TEXT NOT NULL,
     season_end       TEXT NOT NULL,     -- league's last match day; predictions are "as of" here
     contract_end     TEXT,              -- POINT-IN-TIME: as publicly known on season_end
+    cutoff           TEXT NOT NULL,     -- the day the league's NEXT season started
     team_after       TEXT,              -- NULL = not on any team at the cutoff
-    outcome          TEXT NOT NULL,     -- stayed | moved | no_team | pending
+    outcome          TEXT NOT NULL,     -- stayed | moved | no_team | pending (playing stints only)
+    move_type        TEXT,              -- moved only: transfer | demotion (own org's academy)
+    team_after_feb1  TEXT,              -- same label on Feb 1: v0's PRE-REGISTERED grading rule
+    outcome_feb1     TEXT NOT NULL,
     first_move_date  TEXT,              -- first roster change after the season ended
     PRIMARY KEY (year, player)
 );
