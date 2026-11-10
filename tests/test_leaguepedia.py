@@ -131,3 +131,11 @@ def test_anonymous_give_up_points_to_bot_password(tmp_path):
     client, _ = make_client(tmp_path, lambda r: limited)
     with pytest.raises(LeaguepediaError, match="LEAGUEPEDIA_BOT_PASSWORD"):
         client.query(**QUERY)
+
+
+def test_where_values_are_quoted():
+    from rift_rumors.data.ground_truth import _in, _quote
+
+    assert _quote("O'Brien") == "'O''Brien'"
+    assert _quote("back\\") == "'back\\\\'"  # a trailing backslash can't eat the quote
+    assert _in("P.Player", ["a", "b'c"]) == "P.Player IN ('a', 'b''c')"

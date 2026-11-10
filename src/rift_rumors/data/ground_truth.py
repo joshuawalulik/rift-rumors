@@ -53,7 +53,10 @@ def league_code(league_name: str) -> str | None:
 
 
 def _quote(value: str) -> str:
-    return "'" + value.replace("'", "''") + "'"
+    """Quote a value for a Cargo `where` clause. Cargo runs on MySQL, where a
+    backslash escapes the next character, so escape backslashes as well as quotes:
+    otherwise a value ending in `\\` would swallow its closing quote."""
+    return "'" + value.replace("\\", "\\\\").replace("'", "''") + "'"
 
 
 def _in(column: str, values: list[str]) -> str:
