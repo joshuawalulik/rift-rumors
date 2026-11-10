@@ -1,0 +1,151 @@
+{
+  "version": "v0-contract-only",
+  "live_year": 2026,
+  "frozen_at": "2026-11-10T05:43:19.624682+00:00",
+  "as_of": "2026-11-10",
+  "code": {
+    "commit": "8a20ca25260cb24eeab08d44609df23ba9725d80",
+    "dirty": false
+  },
+  "model": {
+    "description": "Historical outcome mix by (league, contract status), shrunk toward the all-league mix (alpha=10, chosen before seeing results).",
+    "alpha": 10,
+    "trained_on_years": [
+      2023,
+      2024,
+      2025
+    ],
+    "n_train": 347,
+    "rates_by_league_status": {
+      "LCK/expiring": {
+        "stayed": 0.33912245894938337,
+        "moved": 0.612673598995045,
+        "no_team": 0.048203942055571616
+      },
+      "LCK/under_contract": {
+        "stayed": 0.8212441879108546,
+        "moved": 0.15600448933782265,
+        "no_team": 0.02275132275132275
+      },
+      "LCK/unknown": {
+        "stayed": 0.3853799584349869,
+        "moved": 0.5262492093611638,
+        "no_team": 0.08837083220384928
+      },
+      "LCS/expiring": {
+        "stayed": 0.3083021488368504,
+        "moved": 0.467998919794761,
+        "no_team": 0.22369893136838856
+      },
+      "LCS/under_contract": {
+        "stayed": 0.765688632355299,
+        "moved": 0.2115600448933782,
+        "no_team": 0.02275132275132275
+      },
+      "LCS/unknown": {
+        "stayed": 0.4970432617491441,
+        "moved": 0.40631808278867104,
+        "no_team": 0.09663865546218488
+      },
+      "LEC/expiring": {
+        "stayed": 0.2430847575325026,
+        "moved": 0.5549554415338914,
+        "no_team": 0.20195980093360594
+      },
+      "LEC/under_contract": {
+        "stayed": 0.6798335863270929,
+        "moved": 0.304210940574577,
+        "no_team": 0.01595547309833024
+      },
+      "LEC/unknown": {
+        "stayed": 0.6339444868856634,
+        "moved": 0.3324420677361854,
+        "no_team": 0.03361344537815126
+      }
+    }
+  },
+  "backtest_leave_one_year_out": {
+    "folds": [
+      {
+        "test_year": 2023,
+        "n": 118,
+        "brier": 0.6074244637667813,
+        "leave_brier": 0.2500480400334953,
+        "log_loss": 1.0110947304926161,
+        "accuracy": 0.559322033898305
+      },
+      {
+        "test_year": 2024,
+        "n": 110,
+        "brier": 0.4837305353407042,
+        "leave_brier": 0.21298701177769344,
+        "log_loss": 0.776017281279581,
+        "accuracy": 0.6545454545454545
+      },
+      {
+        "test_year": 2025,
+        "n": 119,
+        "brier": 0.4506458308293036,
+        "leave_brier": 0.19222827404328624,
+        "log_loss": 0.7523223096882026,
+        "accuracy": 0.6722689075630253
+      }
+    ],
+    "pooled": {
+      "n": 347,
+      "brier": 0.5144475489355754,
+      "leave_brier": 0.21847090671656919,
+      "log_loss": 0.8478312218783248,
+      "accuracy": 0.6282420749279539
+    },
+    "calibration": [
+      {
+        "bucket": "0.0-0.2",
+        "n": 41,
+        "predicted": 0.14240568253758454,
+        "observed": 0.3170731707317073
+      },
+      {
+        "bucket": "0.2-0.4",
+        "n": 87,
+        "predicted": 0.27781631848681904,
+        "observed": 0.26436781609195403
+      },
+      {
+        "bucket": "0.4-0.6",
+        "n": 77,
+        "predicted": 0.5004357586379935,
+        "observed": 0.44155844155844154
+      },
+      {
+        "bucket": "0.6-0.8",
+        "n": 142,
+        "predicted": 0.6894520592228819,
+        "observed": 0.6690140845070423
+      }
+    ]
+  },
+  "data": {
+    "gcd_tabs": {
+      "AME": {
+        "sheet_updated": "Oct 27, 2026\u00a011:52:20\u00a0PT",
+        "snapshot_at": "2026-11-10T05:12:13+00:00"
+      },
+      "EMEA": {
+        "sheet_updated": "9/9/2026 7:26:51",
+        "snapshot_at": "2026-11-10T05:12:13+00:00"
+      },
+      "KR": {
+        "sheet_updated": "Nov 3, 2026 0:15:46 PT",
+        "snapshot_at": "2026-11-10T05:12:13+00:00"
+      }
+    }
+  },
+  "population": {
+    "total": 133,
+    "scored": 121,
+    "not_scored_already_known": 12
+  },
+  "csv_sha256": "e937b28b1de8277239d3b8b527b47f8b9c86a305e81af932e4312ecbef61867a",
+  "grading": "Scored rows are graded on their outcome as of Feb 1 of the next year, using the same label rules as offseason_outcomes."
+}
