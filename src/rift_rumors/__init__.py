@@ -26,9 +26,29 @@ def main() -> None:
     hello.add_argument("--repeat", type=int, default=1, help="call each model N times")
 
     sub.add_parser("ground-truth", help="Lesson 01: build data/ground_truth.db from Leaguepedia")
+    sub.add_parser("backtest", help="Leave-one-year-out backtest: base rate vs v0")
+    freeze = sub.add_parser("freeze", help="Freeze v0 live predictions (immutable)")
+    freeze.add_argument("--year", type=int, default=2026, help="offseason being predicted")
 
     args = parser.parse_args()
-    if args.command == "ground-truth":
+    if args.command in ("backtest", "freeze"):
+        import sqlite3
+
+        from rift_rumors import config
+
+        conn = sqlite3.connect(config.GROUND_TRUTH_DB)
+        conn.row_factory = sqlite3.Row
+        if args.command == "backtest":
+            _print_backtest(conn)
+        else:
+            from rift_rumors.predict.freeze import freeze_v0
+
+            csv_path, meta_path = freeze_v0(
+                conn, config.REPO_ROOT / "predictions", config.REPO_ROOT, args.year
+            )
+            print(f"Froze {csv_path}\n      {meta_path}")
+            print("Now commit both files and tag the commit.")
+    elif args.command == "ground-truth":
         from rift_rumors import config
         from rift_rumors.data import db, ground_truth
         from rift_rumors.data.leaguepedia import CargoClient
@@ -55,4 +75,23 @@ def main() -> None:
             max_tokens=args.max_tokens,
             use_system=not args.no_system,
             repeat=args.repeat,
+        )
+
+
+def _print_backtest(conn) -> None:
+    from datetime import date
+
+    from rift_rumors.evals.backtest import leave_one_year_out
+    from rift_rumors.predict.features import load_examples
+    from rift_rumors.predict.v0 import BaseRate, ContractBaseline
+
+    as_of = date.today().strftime("%m-%d")
+    history = [e for e in load_examples(conn, as_of) if e.outcome != "pending"]
+    print(f"Leave-one-year-out, as of {as_of} each year (lower is better except accuracy)\n")
+    print(f"{'model':<12}{'n':>5}{'brier':>8}{'leave':>8}{'logloss':>9}{'acc':>6}")
+    for name, make in (("base-rate", BaseRate), ("v0", lambda: ContractBaseline(alpha=10))):
+        p = leave_one_year_out(history, make)["pooled"]
+        print(
+            f"{name:<12}{p['n']:>5}{p['brier']:>8.3f}{p['leave_brier']:>8.3f}"
+            f"{p['log_loss']:>9.3f}{p['accuracy']:>6.2f}"
         )
