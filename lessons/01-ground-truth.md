@@ -154,6 +154,8 @@ v0's **frozen** predictions are unchanged: frozen means frozen. v0 was *trained*
 
 Answer with SQL against `data/ground_truth.db`. Predict first, then query.
 
+**My answers, with predictions, mistakes and findings:** [`01-queries/`](01-queries/README.md). Exercises 3 and 4 found real bugs, fixed in §8 or listed there as open issues.
+
 1. **Turnover by team:** which team had the most players *leave* in the 2024 offseason? Is that what you remember?
 2. **Turnover by role:** do supports move more or less than mids? (`GROUP BY role`)
 3. **Find a wrong label.** You follow these leagues. Scan `SELECT * FROM offseason_outcomes WHERE year=2025` and find one row you believe is wrong, then work out *why* from the `tenures` and `roster_changes` tables. (This is how real eval sets get cleaned.)
