@@ -14,3 +14,6 @@ Scored rows are graded against `offseason_outcomes` once Feb 1 of the next year 
 | Freeze | As of | Players scored | Backtest leave-Brier (base rate 0.256) | Live result |
 |---|---|---|---|---|
 | [`2026/v0-contract-only`](2026/v0-contract-only.csv) | 2026-11-10 | 121 | 0.218 | pending (Feb 1, 2027) |
+
+### Note: label corrections after the v0 freeze
+On 2026-11-10, after v0 was frozen, an identity fix (player name variants and team continuity: see [lesson 01 §8](../lessons/01-ground-truth.md)) corrected 14 backtest labels and recovered 26 player-seasons. v0's frozen file is unchanged. Re-running its backtest on the corrected labels gives leave-Brier **0.213** vs base rate **0.249** (it was 0.218 vs 0.256 at freeze time). Live grading uses the corrected labels.

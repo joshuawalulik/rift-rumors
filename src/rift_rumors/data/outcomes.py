@@ -5,9 +5,9 @@ season Y. Which team were they on when season Y+1 started?"
 
 Three edge cases the label logic must handle:
 
-- **Rebrands.** "Kwangdong Freecs" becoming "DN Freecs" is the same org. A player
-  who stayed through a rename *stayed*. We resolve team names through the
-  rename chain before comparing.
+- **Rebrands, acquisitions, mergers.** "Kwangdong Freecs" becoming "DN Freecs"
+  is the same seat. A player who stayed through it *stayed*. Teams are
+  compared through a `TeamLineage` (see identity.py), never by raw name.
 - **Multiple active tenures.** A player can be listed on a main roster and an
   academy roster at once. We prefer the stint that continues the old team, and
   otherwise the one joined most recently.
@@ -20,6 +20,8 @@ from __future__ import annotations
 import re
 from collections.abc import Iterable
 from dataclasses import dataclass
+
+from rift_rumors.data.identity import TeamLineage
 
 NEWS_DATE = re.compile(r"News/(\d{4}-\d{2}-\d{2})")
 
@@ -38,15 +40,6 @@ class Outcome:
     outcome: str  # stayed | moved | no_team
 
 
-def canonical_team(name: str, renames: dict[str, str]) -> str:
-    """Follow the rename chain to the newest name (with a cycle guard)."""
-    seen = set()
-    while name in renames and name not in seen:
-        seen.add(name)
-        name = renames[name]
-    return name
-
-
 def active_on(tenure: Tenure, date: str) -> bool:
     joined = tenure.date_join is None or tenure.date_join <= date
     not_left = tenure.date_leave is None or tenure.date_leave > date
@@ -57,19 +50,46 @@ def resolve_outcome(
     team_before: str,
     tenures: Iterable[Tenure],
     cutoff: str,
-    renames: dict[str, str],
+    teams: TeamLineage,
 ) -> Outcome:
-    before = canonical_team(team_before, renames)
     active = [t for t in tenures if active_on(t, cutoff)]
     if not active:
         return Outcome(team_after=None, outcome="no_team")
 
     for t in active:
-        if canonical_team(t.team, renames) == before:
+        if teams.same(t.team, team_before):
             return Outcome(team_after=t.team, outcome="stayed")
 
     newest = max(active, key=lambda t: t.date_join or "")
     return Outcome(team_after=newest.team, outcome="moved")
+
+
+def tenures_from_roster_changes(
+    player: str, events: Iterable[tuple[str, str, str]]
+) -> list[Tenure]:
+    """Rebuild stints from (date, team, direction) roster changes.
+
+    Used only for players Leaguepedia has no tenure rows for (e.g. BrokenBlade).
+    A Join opens a stint and a Leave closes it. A same-day Leave+Join on one team
+    is a re-signing, which Leaguepedia records as a pair, so Leaves sort first and
+    the stint continues without a gap. A Leave with no earlier Join means the
+    stint began before our data: join date unknown (None).
+    """
+    order = {"Leave": 0, "Join": 1}
+    open_since: dict[str, str | None] = {}
+    seen_join: set[str] = set()
+    tenures = []
+    for date, team, direction in sorted(events, key=lambda e: (e[0], order.get(e[2], 2))):
+        if direction == "Join":
+            open_since.setdefault(team, date)
+            seen_join.add(team)
+        elif direction == "Leave":
+            if team in open_since:
+                tenures.append(Tenure(player, team, open_since.pop(team), date))
+            elif team not in seen_join:
+                tenures.append(Tenure(player, team, None, date))
+    tenures += [Tenure(player, team, since, None) for team, since in open_since.items()]
+    return tenures
 
 
 # --- point-in-time contract lookup ---------------------------------------------
@@ -96,20 +116,17 @@ def news_date(news_id: str | None) -> str | None:
 
 
 def contract_end_as_of(
-    contracts: Iterable[ContractNews], team: str, as_of: str, renames: dict[str, str]
+    contracts: Iterable[ContractNews], team: str, as_of: str, teams: TeamLineage
 ) -> str | None:
     """The contract end date for `team` as publicly known on `as_of`.
 
     Announcements without a parseable date are skipped. If we can't tell when it
     became public, we can't prove it was known at the time.
     """
-    target = canonical_team(team, renames)
     known = [
         (date, c)
         for c in contracts
-        if canonical_team(c.team, renames) == target
-        and (date := news_date(c.news_id)) is not None
-        and date <= as_of
+        if teams.same(c.team, team) and (date := news_date(c.news_id)) is not None and date <= as_of
     ]
     if not known:
         return None

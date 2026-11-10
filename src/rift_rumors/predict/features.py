@@ -17,7 +17,8 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from rift_rumors.data.gcd import normalize_handle
-from rift_rumors.data.outcomes import ContractNews, canonical_team, contract_end_as_of, news_date
+from rift_rumors.data.identity import TeamLineage
+from rift_rumors.data.outcomes import ContractNews, contract_end_as_of, news_date
 
 CLASSES = ("stayed", "moved", "no_team")
 GCD_TAB = {"LCK": "KR", "LEC": "EMEA", "LCS": "AME"}
@@ -65,7 +66,7 @@ def resolve_contract(
     gcd_rows: list[sqlite3.Row],
     team: str,
     as_of: str,
-    renames: dict[str, str],
+    teams: TeamLineage,
 ) -> tuple[str | None, str]:
     """Pick the contract end known on `as_of`, from the most recent evidence.
 
@@ -73,14 +74,11 @@ def resolve_contract(
     the GCD tab's own last update. Only GCD snapshots we took on/before `as_of`
     count, so past years automatically fall back to Leaguepedia.
     """
-    lp_end = contract_end_as_of(lp_news, team, as_of, renames)
-    target = canonical_team(team, renames)
+    lp_end = contract_end_as_of(lp_news, team, as_of, teams)
     lp_dates = [
         d
         for c in lp_news
-        if canonical_team(c.team, renames) == target
-        and (d := news_date(c.news_id)) is not None
-        and d <= as_of
+        if teams.same(c.team, team) and (d := news_date(c.news_id)) is not None and d <= as_of
     ]
     lp_latest = max(lp_dates, default=None)
 
@@ -96,7 +94,8 @@ def resolve_contract(
 
 
 def load_examples(conn: sqlite3.Connection, as_of_month_day: str) -> list[Example]:
-    renames = {r["old_name"]: r["new_name"] for r in conn.execute("SELECT * FROM team_renames")}
+    continuity = [dict(r) for r in conn.execute("SELECT * FROM team_renames")]
+    lineages: dict[str, TeamLineage] = {}
     handles = {r["player"]: r["handle"] for r in conn.execute("SELECT player, handle FROM players")}
 
     lp_news: dict[str, list[ContractNews]] = defaultdict(list)
@@ -118,8 +117,10 @@ def load_examples(conn: sqlite3.Connection, as_of_month_day: str) -> list[Exampl
         as_of = f"{o['year']}-{as_of_month_day}"
         handle = handles.get(o["player"]) or o["player"]
         gcd_rows = gcd.get((GCD_TAB[o["league"]], normalize_handle(handle)), [])
+        if as_of not in lineages:
+            lineages[as_of] = TeamLineage.as_of(continuity, as_of)
         end, source = resolve_contract(
-            lp_news[o["player"]], gcd_rows, o["team_before"], as_of, renames
+            lp_news[o["player"]], gcd_rows, o["team_before"], as_of, lineages[as_of]
         )
         known = any(o["season_end"] < d <= as_of for d in changes[o["player"]])
         examples.append(

@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 import pytest
 
 from rift_rumors.data import db
+from rift_rumors.data.identity import TeamLineage
 from rift_rumors.data.outcomes import ContractNews
 from rift_rumors.evals import metrics
 from rift_rumors.evals.backtest import leave_one_year_out, scoreable
@@ -61,19 +62,23 @@ def gcd_row(end, snapshot_at="2026-11-10T00:00:00+00:00", updated="9/9/2026 7:26
 
 def test_newer_gcd_beats_older_leaguepedia():  # the Lyncas case
     lp = [ContractNews("Team Vitality", "2026-11-26", "News/2024-05-21_55", False)]
-    end, source = resolve_contract(lp, [gcd_row("2026-11-16")], "Team Vitality", "2026-11-10", {})
+    end, source = resolve_contract(
+        lp, [gcd_row("2026-11-16")], "Team Vitality", "2026-11-10", TeamLineage()
+    )
     assert (end, source) == ("2026-11-16", "gcd")
 
 
 def test_newer_leaguepedia_beats_stale_gcd():
     lp = [ContractNews("Team Vitality", "2028-11-20", "News/2026-10-01_1", False)]
-    end, source = resolve_contract(lp, [gcd_row("2026-11-16")], "Team Vitality", "2026-11-10", {})
+    end, source = resolve_contract(
+        lp, [gcd_row("2026-11-16")], "Team Vitality", "2026-11-10", TeamLineage()
+    )
     assert (end, source) == ("2028-11-20", "leaguepedia")
 
 
 def test_gcd_snapshots_taken_after_as_of_are_invisible():
     lp = [ContractNews("T1", "2023-11-20", "News/2022-06-09_29", False)]
-    end, source = resolve_contract(lp, [gcd_row("2029-11-19")], "T1", "2023-11-10", {})
+    end, source = resolve_contract(lp, [gcd_row("2029-11-19")], "T1", "2023-11-10", TeamLineage())
     assert (end, source) == ("2023-11-20", "leaguepedia")  # no peeking at a 2026 snapshot
 
 
