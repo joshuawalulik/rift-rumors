@@ -1,0 +1,35 @@
+[project]
+name = "rift-rumors"
+version = "0.1.0"
+description = "Predict League of Legends pro roster moves from stats, contracts and rumors"
+readme = "README.md"
+authors = [
+    { name = "Joshua Walulik", email = "JRwalulik@icloud.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "anthropic>=2.7.0",
+    "ollama>=0.6.3",
+    "pydantic>=2.14.3",
+    "python-dotenv>=1.2.4",
+    "rich>=15.0.0",
+]
+
+[project.scripts]
+rift-rumors = "rift_rumors:main"
+
+[build-system]
+requires = ["uv_build>=0.13.7,<0.14.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.2.0",
+    "ruff>=0.17.4",
+]
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
