@@ -4,7 +4,7 @@ Predict where League of Legends tier-one pros (LCK, LEC, LCS) play next season b
 in-season stats, contract status and social-media rumors, then **grade the predictions
 against real roster announcements**.
 
-> Status: **Lesson 01 done**: 426 labeled backtest player-seasons (2023–25) plus the live 2026 offseason. Built in public as a lesson series.
+> Status: **v0 frozen for the live 2026 offseason** ([predictions](predictions/README.md), tag `freeze/2026-v0`): contract-only baseline, backtest leave-Brier 0.218 vs 0.256 base rate. Built in public as a lesson series.
 
 ## Lessons
 
@@ -24,6 +24,7 @@ cp .env.example .env         # add ANTHROPIC_API_KEY + Leaguepedia bot password
 uv run pytest
 uv run rift-rumors hello     # compare models on one rumor post
 uv run rift-rumors ground-truth  # build data/ground_truth.db
+uv run rift-rumors backtest      # leave-one-year-out: base rate vs v0
 ```
 
 ## Layout
