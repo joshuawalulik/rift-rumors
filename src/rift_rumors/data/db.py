@@ -30,8 +30,17 @@ CREATE TABLE IF NOT EXISTS tournament_rosters (
     PRIMARY KEY (tournament, team, player)
 );
 
+-- Every name a player has used → their canonical page (from PlayerRedirects).
+-- Every `player` column in this database holds the canonical page name.
+CREATE TABLE IF NOT EXISTS player_aliases (
+    alias   TEXT NOT NULL,
+    player  TEXT NOT NULL,
+    PRIMARY KEY (alias, player)
+);
+
 -- One row per uninterrupted stint of a player on a team.
 CREATE TABLE IF NOT EXISTS tenures (
+    source          TEXT NOT NULL,  -- leaguepedia | roster_changes (rebuilt when missing)
     player          TEXT NOT NULL,
     team            TEXT NOT NULL,
     date_join       TEXT,
@@ -72,10 +81,14 @@ CREATE TABLE IF NOT EXISTS players (
     team        TEXT                -- current team per Leaguepedia, right now
 );
 
--- Team renames, so a rebrand isn't mistaken for a roster move.
+-- Team continuity events: renames, rebrands, acquisitions, mergers. Teams linked
+-- by these (as of a date) are the same seat, so keeping it isn't a "move".
 CREATE TABLE IF NOT EXISTS team_renames (
-    old_name TEXT PRIMARY KEY,
-    new_name TEXT NOT NULL
+    date     TEXT,           -- when it took effect; applied only to later offseasons
+    old_name TEXT NOT NULL,
+    new_name TEXT NOT NULL,
+    verb     TEXT,           -- rename | rebrand | acquire | merge | partner
+    source   TEXT NOT NULL   -- leaguepedia | manual: <citation>
 );
 
 -- Riot's Global Contract Database, one row per player per snapshot WE took.

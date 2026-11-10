@@ -1,10 +1,12 @@
 # Lesson 01: Ground truth from Leaguepedia
 
 **Goal:** build the labels every prediction will be graded against. For every LCK, LEC and LCS player on a roster at the end of a season: where were they when the next season started?
-**Ends with:** `data/ground_truth.db` (SQLite) holding 559 player-seasons. 426 are labeled backtest examples (2023–2025 offseasons) and 133 are pending for the live 2026 offseason. Plus the first real finding about what predicts a move.
+**Ends with:** `data/ground_truth.db` (SQLite) holding 582 player-seasons. 445 are labeled backtest examples (2023–2025 offseasons) and 137 are pending for the live 2026 offseason. Plus the first real finding about what predicts a move.
+
+> Numbers below reflect the **identity fix** (§8), made after exercise 3 found players missing from G2. Before it: 559 rows, 426 labeled.
 
 ```bash
-uv run rift-rumors ground-truth   # first run ~46 API requests; later runs 0 (disk cache)
+uv run rift-rumors ground-truth   # first run ~90 API requests; later runs 0 (disk cache)
 sqlite3 data/ground_truth.db      # explore it yourself
 ```
 
@@ -25,7 +27,8 @@ Leaguepedia (lol.fandom.com) stores esports data in **Cargo** tables, queryable 
 | `TenuresUnbroken` | One row per player-team stint: join date, leave date | **The labels** |
 | `RosterChanges` | Every individual move, dated | When a move became known |
 | `Contracts` | Contract end dates, each tied to a dated news item | Point-in-time contract status |
-| `Teams` | `RenamedTo` | Not mistaking a rebrand for a move |
+| `PlayerRedirects` | Every name a player has used → one canonical page | Player identity (§8) |
+| `TeamRenames` | Dated renames, rebrands, acquisitions | Not mistaking a rebrand for a move (§8) |
 | Riot **GCD** (Google Sheet, not Leaguepedia) | Official current contracts | Cross-check, plus live contract status (§7) |
 
 ## 3. Access: what went wrong, and the fix
@@ -50,21 +53,15 @@ History never expires from the cache; current-offseason data refreshes every 6 h
 
 **Bug 2: playoffs-only rosters.** "Last tournament of the year" is the playoffs, and playoffs only include the top teams. LEC "Season Finals" has 4 teams. That would silently drop every non-playoff team's players, *the players most likely to move*. That's a biased sample. Fix: take every tournament from June 1 on (summer split, groups, playoffs). A player's season-end team is the team in the **latest** event they appeared in.
 
-**Then filter:** keep a player only if their stint on that team was still active on the league's last match day. That excluded **64** player-seasons:
+**Then filter:** keep a player only if their stint on that team was still active on the league's last match day. That now excludes **41** player-seasons: short-term subs whose stint ended mid-season (Poby: T1 from 2023-07-05 to 08-01), and academy players called up whose stint is on the academy team (Feisty: listed under KT Rolster, stint on KT Rolster Challengers). Neither is an *offseason move from a main roster*.
 
-| Excluded because | Count | Example |
-|---|---|---|
-| Stint ended before the season did | 31 | Poby: T1 from 2023-07-05 to 08-01, a short-term sub |
-| Academy player called up; their stint is on the academy team | 26 | Feisty: listed under KT Rolster, stint is on KT Rolster Challengers |
-| No stint records at all | 7 | (page-name mismatches, worth revisiting) |
-
-None of these is an *offseason move from a main roster*, which is the question we're predicting.
+> ⚠️ The first version excluded **64**, and I called them all legitimate. They weren't. Exercise 3 found Hans Sama missing from G2, and the trace showed ~20 of those 64 were **identity bugs**, not departures (§8). A filter that "removes bad rows" can hide a join bug. Always check *who* got excluded.
 
 ## 5. The labels
 
 For each player, `outcome` describes where they were on **February 1** of the next year (`src/rift_rumors/data/outcomes.py`):
 
-- `stayed`: same team. A rebrand counts as staying; renames are resolved before comparing.
+- `stayed`: kept their seat. Staying through a rename, rebrand, **acquisition or merger** counts (decided 2026-11-10: same seat, new owner).
 - `moved`: a different team. If the player is listed on two teams, the continuing team wins, otherwise the most recent join.
 - `no_team`: no active stint (free agent, retired, other role). This is a real outcome to predict, not missing data.
 - `pending`: the 2026 offseason, which hasn't happened yet.
@@ -101,29 +98,59 @@ Riot publishes the official **Global Contract Database (GCD)** as a public Googl
 - **That validates the backtest.** The 2023–25 contract features can only come from Leaguepedia's dated announcements. Leaguepedia matching the official source 99% of the time today is strong evidence those historical values are trustworthy too.
 - **The one disagreement:** Lyncas (Vitality). Leaguepedia says Nov **26** from an announcement in May 2024, while the GCD tab (updated Sep 2026) says Nov **16**, like every other LEC contract. Almost certainly a typo on Leaguepedia. Rule for conflicts: **the more recent evidence wins.** For live features: use the GCD, fall back to Leaguepedia, unless Leaguepedia has an announcement dated after the GCD tab's last update.
 
-## 8. Results
+## 8. Identity: who is who (found in exercise 3)
 
-**Backtest population:** 426 labeled player-seasons, 2023–2025 offseasons, LCK + LEC + LCS.
+Exercise 3 asked: find a label you know is wrong. **G2's 2025 roster showed 3 players instead of 5.** Tracing it found three identity problems in Leaguepedia's tables, which no test had caught:
+
+| Problem | Example | Scale |
+|---|---|---|
+| Player names differ in **capitalization** between tables | Roster: `Hans Sama`; stints: `Hans sama` | 37 players |
+| Players **rename themselves** and old tables keep the old name | `SamD` → `Hans SamD`; `JeongHoon` → `Execute`; `Exakick` → `3XA` | several |
+| Stints recorded under a **typo alias** | BrokenBlade's stints are under `BrokenBIade`: capital **I** for lowercase **l** | 1 (that we know of) |
+| Team renames **incomplete** (`Teams.RenamedTo` had no dates and missed links) | `FearX → BNK FEARX`, `Kwangdong Freecs → DN Freecs` missing | dozens of links |
+
+Exact-match joins silently dropped those players, or mislabeled their outcomes.
+
+**Fix** (`src/rift_rumors/data/identity.py`):
+- **Players:** every name resolves through `PlayerRedirects` (every alias → one canonical page), compared case-insensitively. Data is fetched under *all* of a player's names, because old tables keep old names.
+- **Teams:** a union-find over dated `TeamRenames` events plus a hand-curated [`config/team_continuity.csv`](../config/team_continuity.csv) for gaps (Excel → GIANTX). Union-find instead of chain-following, because names loop: Rogue → KOI (2022) → Rogue (2023).
+- **Timing:** acquisitions and mergers count only **from their date** (NAVI buying Rogue's spot in June 2025 doesn't link them for 2023). Renames and rebrands apply at **any** date, because Leaguepedia writes old stints under the team's *current* name: Liiv SANDBOX's 2023 players appear as `BNK FEARX`, a May 2024 rebrand. A dated rule broke exactly that case on the first try.
+- **Fallback:** for players with no stint rows at all, stints are rebuilt from roster changes, where a same-day Leave + Join is a re-signing.
+
+**Effect on the labels** (before → after):
+
+| | Before | After |
+|---|---|---|
+| Player-seasons | 559 | **582** (26 recovered, 3 re-keyed under new names) |
+| Excluded as "left mid-season" | 64 | **41** |
+| Labels corrected | | **14**: 13 moved → stayed (TSM → Shopify Rebellion, KOI → Rogue, Excel → GIANTX, Liiv SANDBOX → BNK FEARX, Kwangdong Freecs → DN Freecs), 1 no_team → moved (Jojopyun → Cloud9) |
+| v0 backtest leave-Brier (base rate) | 0.218 (0.256) | **0.213 (0.249)**, still ~15% better |
+
+v0's **frozen** predictions are unchanged: frozen means frozen. v0 was *trained* on the noisier labels and will be *graded* on the corrected ones. That's the honest order: fix the answer key, never the submitted answers.
+
+## 9. Results
+
+**Backtest population:** 445 labeled player-seasons, 2023–2025 offseasons, LCK + LEC + LCS.
 
 | Contract status at season end | n | Stayed | Moved | No team |
 |---|---|---|---|---|
-| Expiring (≤ 120 days after season end) | 189 | 29% | **57%** | 15% |
-| Under contract | 183 | **63%** | 30% | 7% |
-| Unknown | 54 | 44% | 48% | 7% |
-| **All** | **426** | **46%** | | |
+| Expiring (≤ 120 days after season end) | 201 | 33% | **53%** | 14% |
+| Under contract | 206 | **68%** | 26% | 6% |
+| Unknown | 38 | 47% | 47% | 5% |
+| **All** | **445** | **51%** | | |
 
 **When moves become known:** of players who didn't stay, **72%** had their first roster change recorded by **Nov 20**, and **97%** by Dec 31.
 
-**The live 2026 offseason, as of Nov 10:** 133 players. Only 12 have a roster change recorded so far, and 73 have contracts expiring this year.
+**The live 2026 offseason, as of Nov 10:** 137 players (133 when v0 was frozen, before the identity fix; 12 of those already had a recorded move).
 
 ### What to notice
-1. **Churn is the norm.** Only 46% of tier-one players stay on their team through an offseason. "Everyone stays" is a weak baseline, and that's good news: there's real signal to find.
-2. **Contract status is a strong signal.** Expiring → 71% leave (moved + no team). Under contract → 63% stay. Any model must beat a *contract-only* rule, not just "everyone stays".
-3. **But 30% of under-contract players moved anyway** (buyouts, trades). Contracts alone won't get there, and rumors should help most for exactly these players.
+1. **Churn is the norm.** Only 51% of tier-one players keep their seat through an offseason (46% before the identity fix: rebrands were being counted as moves). "Everyone stays" is a weak baseline, and that's good news: there's real signal to find.
+2. **Contract status is a strong signal.** Expiring → 67% leave (moved + no team). Under contract → 68% stay. Any model must beat a *contract-only* rule, not just "everyone stays".
+3. **But 26% of under-contract players moved anyway** (buyouts, trades). Contracts alone won't get there, and rumors should help most for exactly these players.
 4. **The live window is closing.** 72% of moves are recorded by Nov 20, ten days from now. To grade predictions live, a v0 must be **frozen this week**. That moves the "contract-only baseline" from Lesson 06 to *now*.
-5. **The data needed auditing.** Three real bugs (loose regex, playoffs-only, leaked contracts) were each caught by *looking at the output*, not by the code crashing. None would have raised an error.
+5. **The data needed auditing.** Six real bugs (loose regex, playoffs-only, leaked contracts, player-name mismatches, incomplete team renames, retroactive rebrand names) were each caught by *looking at the output*, not by the code crashing. None raised an error. Three were found by the person who knows the leagues, not by the code author.
 
-## 9. Exercises
+## 10. Exercises
 
 Answer with SQL against `data/ground_truth.db`. Predict first, then query.
 
@@ -134,9 +161,10 @@ Answer with SQL against `data/ground_truth.db`. Predict first, then query.
 5. **Staleness:** `SELECT tab, sheet_updated, COUNT(*) FROM gcd_contracts GROUP BY 1, 2`. Which region's contract data would you trust least for a move announced last week, and why?
 6. **The live board:** list the 2026 players whose contracts expire this year *and* who have no roster change yet. That's the list we'll predict first.
 
-## 10. Interview talking points
+## 11. Interview talking points
 
 - "My labels came from an external wiki. I audited them by hand, found three silent bugs (a loose regex, playoffs-only sampling that dropped the players most likely to move, and leaked contract dates), and fixed each with a test."
+- "Domain knowledge found what tests didn't: G2 showing 3 of 5 players exposed that the source's tables disagree on player names (case variants, in-game renames, even a capital-I-for-lowercase-l typo). I added a canonical identity layer and re-measured: 14 labels corrected, 26 players recovered."
 - "I caught temporal leakage in the source data itself: a contract field reflected re-signings made years later. I rebuilt contract status point-in-time from dated announcements."
 - "I validated the third-party contract data against Riot's official database: 99% agreement. I resolved the conflicts by recency of evidence, and snapshot the official sheet because it keeps no history."
 - "The fetcher logs in with least privilege, throttles, backs off, and caches every response, so the dataset rebuilds with zero network calls and every metric traces back to the raw data."

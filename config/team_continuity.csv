@@ -1,0 +1,7 @@
+# Team continuity events missing from Leaguepedia's TeamRenames table.
+# A player who keeps their seat through one of these is labeled "stayed"
+# (decision, 2026-11-10: mergers and acquisitions = same seat, new owner).
+# date = when it took effect (approximate is OK; it must precede the Feb 1 cutoff
+# of the offseason it applies to). Add a source for every row.
+date,old_name,new_name,verb,source
+2023-12-01,Excel Esports,GIANTX,merge,Excel and GIANTS merged into GIANTX for 2024 (approximate date); https://lol.fandom.com/wiki/GIANTX

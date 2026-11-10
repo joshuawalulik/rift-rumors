@@ -61,7 +61,12 @@ def main() -> None:
         # The DB is fully derived from the raw cache, so rebuild it from scratch each run.
         config.GROUND_TRUTH_DB.unlink(missing_ok=True)
         conn = db.connect(config.GROUND_TRUTH_DB)
-        counts = ground_truth.build(client, conn, gcd_dir=config.DATA_DIR / "raw" / "gcd")
+        counts = ground_truth.build(
+            client,
+            conn,
+            gcd_dir=config.DATA_DIR / "raw" / "gcd",
+            continuity_path=config.REPO_ROOT / "config" / "team_continuity.csv",
+        )
         print(f"\nWrote {config.GROUND_TRUTH_DB} ({client.requests_made} API requests)")
         for table, n in counts.items():
             print(f"  {table:<20} {n:>6} rows")
