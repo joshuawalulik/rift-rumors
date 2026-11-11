@@ -37,3 +37,4 @@ select = ["E", "F", "I", "UP", "B"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/test_gcd.py" = ["E501"]  # fixtures are verbatim CSV rows
+"tests/test_rumors.py" = ["E501"]  # fixtures are verbatim RSS XML
